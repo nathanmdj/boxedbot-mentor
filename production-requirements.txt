@@ -1,0 +1,17 @@
+# Production dependencies (installed in Modal container via main.py)
+# These are the exact packages that run in production
+
+fastapi==0.104.1
+uvicorn==0.24.0
+openai==1.3.8
+PyGithub==1.59.1
+python-jose[cryptography]==3.3.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+httpx==0.25.2
+pyyaml==6.0.1
+tenacity==8.2.3
+python-multipart==0.0.6
+
+# Note: These are defined in main.py modal.Image.pip_install()
+# and automatically installed in each Modal container instance

@@ -1,0 +1,27 @@
+# Modal CLI (required for deployment)
+modal
+
+# Local development only (for IDE support and testing)
+fastapi
+uvicorn[standard]
+openai
+PyGithub
+python-jose[cryptography]
+pydantic
+pydantic-settings
+httpx
+pyyaml
+python-dotenv
+tenacity
+python-multipart
+
+# Development tools (local only)
+pytest
+pytest-asyncio
+pytest-cov
+black
+flake8
+mypy
+
+# Optional for local development
+aiofiles
