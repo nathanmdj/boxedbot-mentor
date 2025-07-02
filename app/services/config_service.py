@@ -4,7 +4,7 @@ Configuration service for repository-specific settings
 
 import yaml
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 from app.core.config import settings
 from app.core.logging import LoggerMixin
@@ -35,13 +35,15 @@ class RepoConfig(BaseModel):
     security_review_paths: List[str] = ["**/auth/**", "**/security/**", "**/*auth*"]
     skip_style_paths: List[str] = ["**/migrations/**", "**/generated/**"]
     
-    @validator("review_level")
+    @field_validator("review_level")
+    @classmethod
     def validate_review_level(cls, v):
         if v not in ["minimal", "standard", "strict"]:
             raise ValueError("Review level must be minimal, standard, or strict")
         return v
     
-    @validator("focus_areas")
+    @field_validator("focus_areas")
+    @classmethod
     def validate_focus_areas(cls, v):
         valid_areas = ["security", "performance", "maintainability", "style", "testing"]
         for area in v:
@@ -49,7 +51,8 @@ class RepoConfig(BaseModel):
                 raise ValueError(f"Invalid focus area: {area}")
         return v
     
-    @validator("max_comments_per_pr")
+    @field_validator("max_comments_per_pr")
+    @classmethod
     def validate_max_comments(cls, v):
         if v < 1 or v > 50:
             raise ValueError("Max comments per PR must be between 1 and 50")
