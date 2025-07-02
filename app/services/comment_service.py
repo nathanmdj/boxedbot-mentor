@@ -164,7 +164,7 @@ class CommentService(LoggerMixin):
         comment: Dict[str, Any],
         pull_request: PullRequest
     ) -> Optional[int]:
-        """Map diff line number to GitHub line number"""
+        """Validate line number is valid for GitHub review comment"""
         try:
             filename = comment.get("filename")
             line_number = comment.get("line")
@@ -188,21 +188,21 @@ class CommentService(LoggerMixin):
             # Parse the diff to find valid line numbers
             valid_lines = self._get_valid_diff_lines(target_file.patch)
             
-            # Try to find the closest valid line
+            # Check if the provided line number is valid for GitHub review comments
             if line_number in valid_lines:
                 return line_number
             
             # Find the closest valid line (within 5 lines)
             closest_line = self._find_closest_valid_line(line_number, valid_lines, max_distance=5)
             if closest_line:
-                self.logger.debug(f"Mapped line {line_number} to {closest_line} in {filename}")
+                self.logger.debug(f"Adjusted line {line_number} to closest valid line {closest_line} in {filename}")
                 return closest_line
             
-            self.logger.warning(f"No valid diff line found near {line_number} in {filename}")
+            self.logger.warning(f"Line {line_number} is not valid for GitHub review comment in {filename}")
             return None
             
         except Exception as e:
-            self.log_error("Line number mapping", e, comment=comment)
+            self.log_error("Line number validation", e, comment=comment)
             return None
     
     def _get_valid_diff_lines(self, patch: str) -> List[int]:

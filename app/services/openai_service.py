@@ -117,8 +117,16 @@ class OpenAIService(LoggerMixin):
         # Build review level instructions
         level_instructions = self._build_review_level_instructions(review_level)
         
+        # Parse diff to get line mappings
+        from app.utils.file_utils import DiffParser
+        parser = DiffParser()
+        diff_info = parser.parse_diff_lines(patch)
+        
+        # Create line mapping information for the AI
+        line_mapping_info = self._build_line_mapping_info(diff_info)
+        
         prompt = f"""
-You are an expert code reviewer adhering to clean code and SOLID principles analyzing a pull request . Please analyze the following code changes and provide specific, actionable feedback.
+You are an expert code reviewer adhering to clean code and SOLID principles analyzing a pull request. Please analyze the following code changes and provide specific, actionable feedback.
 
 **File:** {filename}
 **File Type:** {file_ext}
@@ -130,6 +138,8 @@ You are an expert code reviewer adhering to clean code and SOLID principles anal
 {patch}
 ```
 
+{line_mapping_info}
+
 **Review Instructions:**
 {level_instructions}
 
@@ -138,7 +148,7 @@ You are an expert code reviewer adhering to clean code and SOLID principles anal
 
 **Requirements:**
 - Only comment on lines that are changed (marked with + or -)
-- Provide specific line numbers from the diff
+- Use the ACTUAL FILE LINE NUMBERS from the line mapping above, not diff line numbers
 - Give actionable suggestions with code examples when possible
 - Be constructive and educational in tone
 - Avoid nitpicking unless in strict mode
@@ -146,7 +156,7 @@ You are an expert code reviewer adhering to clean code and SOLID principles anal
 
 **Response Format:**
 Return a JSON array of comments. Each comment should have:
-- "line": line number from the diff (required)
+- "line": ACTUAL file line number (from the line mapping above, required)
 - "type": "error" | "warning" | "suggestion" (required)
 - "category": one of {focus_areas} (required)
 - "message": clear description of the issue (required)
@@ -157,7 +167,7 @@ Return a JSON array of comments. Each comment should have:
 ```json
 [
   {{
-    "line": 10,
+    "line": 42,
     "type": "warning",
     "category": "security",
     "message": "Potential SQL injection vulnerability detected",
@@ -167,10 +177,48 @@ Return a JSON array of comments. Each comment should have:
 ]
 ```
 
+IMPORTANT: Use only the actual file line numbers from the line mapping above. Do not use diff line numbers.
+
 Only return the JSON array, no other text.
 """
         
         return prompt
+    
+    def _build_line_mapping_info(self, diff_info: Dict[str, Any]) -> str:
+        """Build line mapping information for the AI prompt"""
+        if not diff_info.get('added_lines'):
+            return "**Line Mapping:** No changed lines found."
+        
+        # Get all changed lines with their actual file line numbers
+        changed_lines = []
+        for line_info in diff_info['added_lines']:
+            if line_info['new_line'] > 0:
+                changed_lines.append({
+                    'content': line_info['content'].strip(),
+                    'file_line': line_info['new_line']
+                })
+        
+        if not changed_lines:
+            return "**Line Mapping:** No valid changed lines found."
+        
+        # Create a mapping table for the AI
+        mapping_text = "**Line Mapping (Changed Lines):**\n"
+        mapping_text += "Use these ACTUAL FILE LINE NUMBERS when referencing changed lines:\n\n"
+        
+        for i, line_info in enumerate(changed_lines[:20]):  # Limit to first 20 for brevity
+            content_preview = line_info['content'][:60]
+            if len(line_info['content']) > 60:
+                content_preview += "..."
+            mapping_text += f"- Line {line_info['file_line']}: {content_preview}\n"
+        
+        if len(changed_lines) > 20:
+            mapping_text += f"- ... and {len(changed_lines) - 20} more changed lines\n"
+        
+        mapping_text += "\nIMPORTANT: Always use these file line numbers (e.g., {}) in your response.\n".format(
+            ", ".join(str(l['file_line']) for l in changed_lines[:5])
+        )
+        
+        return mapping_text
     
     def _build_focus_areas_text(self, focus_areas: List[str]) -> str:
         """Build focus areas description"""
