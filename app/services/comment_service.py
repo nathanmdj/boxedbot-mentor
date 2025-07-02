@@ -37,6 +37,12 @@ class CommentService(LoggerMixin):
             # Group comments by file and prepare for GitHub API
             review_comments = self._prepare_review_comments(comments, pull_request)
             
+            # If no valid inline comments could be created, post a general comment
+            if not review_comments:
+                self.logger.warning(f"No valid inline comments for PR #{pull_request.number}, posting general comment")
+                fallback_message = self._create_fallback_comment(comments, review_summary)
+                return await self.post_simple_comment(pull_request, fallback_message)
+            
             # Create the review
             review = await self.github_service.create_pr_review(
                 pull_request=pull_request,
@@ -61,7 +67,13 @@ class CommentService(LoggerMixin):
             
         except Exception as e:
             self.log_error("PR review posting", e, pr_number=pull_request.number)
-            raise GitHubAPIException(f"Failed to post PR review: {e}")
+            # Try fallback comment on any error
+            try:
+                review_summary = await self.openai_service.generate_review_summary(comments, pr_context)
+                fallback_message = self._create_fallback_comment(comments, review_summary)
+                return await self.post_simple_comment(pull_request, fallback_message)
+            except:
+                raise GitHubAPIException(f"Failed to post PR review: {e}")
     
     def _prepare_review_comments(
         self,
@@ -154,21 +166,134 @@ class CommentService(LoggerMixin):
     ) -> Optional[int]:
         """Map diff line number to GitHub line number"""
         try:
-            # For now, return the line number as-is
-            # In a more sophisticated implementation, we would:
-            # 1. Parse the diff to understand line mappings
-            # 2. Map diff line numbers to actual file line numbers
-            # 3. Handle context lines and line number offsets
-            
+            filename = comment.get("filename")
             line_number = comment.get("line")
-            if isinstance(line_number, int) and line_number > 0:
+            
+            if not filename or not isinstance(line_number, int) or line_number <= 0:
+                return None
+            
+            # Get the file from the PR to access its patch
+            pr_files = pull_request.get_files()
+            target_file = None
+            
+            for file in pr_files:
+                if file.filename == filename:
+                    target_file = file
+                    break
+            
+            if not target_file or not target_file.patch:
+                self.logger.warning(f"No patch found for file {filename}")
+                return None
+            
+            # Parse the diff to find valid line numbers
+            valid_lines = self._get_valid_diff_lines(target_file.patch)
+            
+            # Try to find the closest valid line
+            if line_number in valid_lines:
                 return line_number
             
+            # Find the closest valid line (within 5 lines)
+            closest_line = self._find_closest_valid_line(line_number, valid_lines, max_distance=5)
+            if closest_line:
+                self.logger.debug(f"Mapped line {line_number} to {closest_line} in {filename}")
+                return closest_line
+            
+            self.logger.warning(f"No valid diff line found near {line_number} in {filename}")
             return None
             
         except Exception as e:
             self.log_error("Line number mapping", e, comment=comment)
             return None
+    
+    def _get_valid_diff_lines(self, patch: str) -> List[int]:
+        """Extract valid line numbers from diff patch"""
+        from app.utils.file_utils import DiffParser
+        
+        parser = DiffParser()
+        diff_info = parser.parse_diff_lines(patch)
+        
+        valid_lines = []
+        for line_info in diff_info['added_lines']:
+            if line_info['new_line'] > 0:
+                valid_lines.append(line_info['new_line'])
+        
+        # Also include context lines that are part of hunks
+        for line_info in diff_info['context_lines']:
+            if line_info['new_line'] > 0:
+                valid_lines.append(line_info['new_line'])
+        
+        return sorted(set(valid_lines))
+    
+    def _find_closest_valid_line(self, target_line: int, valid_lines: List[int], max_distance: int = 5) -> Optional[int]:
+        """Find the closest valid line within max_distance"""
+        if not valid_lines:
+            return None
+        
+        closest_line = None
+        min_distance = float('inf')
+        
+        for valid_line in valid_lines:
+            distance = abs(valid_line - target_line)
+            if distance <= max_distance and distance < min_distance:
+                min_distance = distance
+                closest_line = valid_line
+        
+        return closest_line
+    
+    def _create_fallback_comment(self, comments: List[Dict[str, Any]], review_summary: str) -> str:
+        """Create a fallback general comment when inline comments can't be placed"""
+        message_parts = []
+        
+        # Add review summary
+        message_parts.append(f"🤖 **BoxedBot Code Review**\n\n{review_summary}")
+        
+        # Group comments by file
+        files_comments = {}
+        for comment in comments:
+            filename = comment.get("filename", "unknown")
+            if filename not in files_comments:
+                files_comments[filename] = []
+            files_comments[filename].append(comment)
+        
+        # Add detailed findings
+        message_parts.append("\n## 📋 Detailed Findings\n")
+        
+        for filename, file_comments in files_comments.items():
+            message_parts.append(f"### 📄 `{filename}`\n")
+            
+            for i, comment in enumerate(file_comments, 1):
+                line = comment.get("line", "")
+                comment_type = comment.get("type", "suggestion")
+                category = comment.get("category", "general")
+                message = comment.get("message", "")
+                
+                type_emojis = {
+                    "error": "🚨",
+                    "warning": "⚠️", 
+                    "suggestion": "💡"
+                }
+                
+                category_emojis = {
+                    "security": "🔒",
+                    "performance": "⚡",
+                    "maintainability": "🔧",
+                    "style": "🎨",
+                    "testing": "🧪"
+                }
+                
+                type_emoji = type_emojis.get(comment_type, "📝")
+                category_emoji = category_emojis.get(category, "")
+                
+                line_info = f" (Line {line})" if line else ""
+                category_info = f" *{category_emoji} {category.title()}*" if category != "general" else ""
+                
+                message_parts.append(f"{i}. {type_emoji} **{comment_type.title()}**{line_info}{category_info}")
+                message_parts.append(f"   {message}\n")
+        
+        # Add footer
+        message_parts.append("---\n*🤖 Generated by BoxedBot - Unable to place inline comments due to diff limitations*")
+        
+        return "\n".join(message_parts)
     
     async def post_simple_comment(
         self,
