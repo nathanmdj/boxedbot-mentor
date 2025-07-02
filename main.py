@@ -28,17 +28,17 @@ app = modal.App(settings.APP_NAME)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "fastapi==0.104.1",
-        "uvicorn==0.24.0",
-        "openai==1.3.8",
-        "PyGithub==1.59.1",
+        "fastapi==0.115.14",
+        "uvicorn==0.35.0",
+        "openai>=1.90.0",
+        "PyGithub==2.5.0",
         "python-jose[cryptography]==3.3.0",
-        "pydantic==2.5.0",
-        "pydantic-settings==2.1.0",
-        "httpx==0.25.2",
-        "pyyaml==6.0.1",
-        "tenacity==8.2.3",
-        "python-multipart==0.0.6"
+        "pydantic==2.11.7",
+        "pydantic-settings==2.10.1",
+        "httpx==0.28.1",
+        "pyyaml==6.0.2",
+        "tenacity>=9.0.0",
+        "python-multipart==0.0.20"
     )
     .add_local_dir("app", "/root/app")
 )

@@ -2,22 +2,22 @@
 modal
 
 # Local development only (for IDE support and testing)
-fastapi
-uvicorn[standard]
+fastapi>=0.115.14
+uvicorn[standard]>=0.35.0
 openai
-PyGithub
+PyGithub>=2.5.0
 python-jose[cryptography]
-pydantic
-pydantic-settings
-httpx
-pyyaml
-python-dotenv
+pydantic>=2.11.7
+pydantic-settings>=2.10.1
+httpx>=0.28.1
+pyyaml>=6.0.2
+python-dotenv>=1.1.1
 tenacity
 python-multipart
 
 # Development tools (local only)
-pytest
-pytest-asyncio
+pytest>=8.4.1
+pytest-asyncio>=1.0.0
 pytest-cov
 black
 flake8
