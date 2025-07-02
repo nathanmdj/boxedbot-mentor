@@ -232,8 +232,35 @@ class PRAnalyzerService(LoggerMixin):
         comments: List[Dict[str, Any]], 
         max_comments: int
     ) -> List[Dict[str, Any]]:
-        """Limit and prioritize comments"""
-        if len(comments) <= max_comments:
+        """Limit and prioritize comments based on risk level"""
+        if not comments:
+            return comments
+        
+        # Determine risk level based on comment types and categories
+        has_high_risk = any(
+            c.get("type") == "error" or 
+            c.get("category") == "security" or
+            "bug" in c.get("message", "").lower() or
+            "error" in c.get("message", "").lower() or
+            "vulnerability" in c.get("message", "").lower()
+            for c in comments
+        )
+        
+        # Set comment limit based on risk level
+        if has_high_risk:
+            effective_max = 10  # High risk: allow up to 10 comments
+            risk_level = "high"
+        else:
+            effective_max = 5   # Low risk: limit to 5 comments
+            risk_level = "low"
+        
+        # Don't exceed the configured maximum
+        effective_max = min(effective_max, max_comments)
+        
+        if len(comments) <= effective_max:
+            self.logger.info(
+                f"All {len(comments)} comments included (risk: {risk_level}, limit: {effective_max})"
+            )
             return comments
         
         # Sort comments by priority (errors > warnings > suggestions)
@@ -243,16 +270,18 @@ class PRAnalyzerService(LoggerMixin):
             comments,
             key=lambda c: (
                 priority_order.get(c.get("type", "suggestion"), 3),
-                c.get("category") == "security",  # Prioritize security
+                c.get("category") != "security",  # Prioritize security (False sorts before True)
+                "bug" not in c.get("message", "").lower(),  # Prioritize bug-related comments
+                "error" not in c.get("message", "").lower(),  # Prioritize error-related comments
                 -c.get("file_changes", 0)  # Prioritize files with more changes
             )
         )
         
-        limited = sorted_comments[:max_comments]
+        limited = sorted_comments[:effective_max]
         
         self.logger.info(
             f"Limited comments from {len(comments)} to {len(limited)} "
-            f"(max: {max_comments})"
+            f"(risk: {risk_level}, limit: {effective_max})"
         )
         
         return limited
