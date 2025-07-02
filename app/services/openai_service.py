@@ -118,7 +118,7 @@ class OpenAIService(LoggerMixin):
         level_instructions = self._build_review_level_instructions(review_level)
         
         prompt = f"""
-You are an expert code reviewer analyzing a pull request. Please analyze the following code changes and provide specific, actionable feedback.
+You are an expert code reviewer adhering to clean code and SOLID principles analyzing a pull request . Please analyze the following code changes and provide specific, actionable feedback.
 
 **File:** {filename}
 **File Type:** {file_ext}
@@ -197,7 +197,7 @@ Only return the JSON array, no other text.
             "strict": "Comprehensive review including all issues, style problems, and potential improvements. Be thorough."
         }
         
-        return instructions.get(review_level, instructions["standard"])
+        return instructions.get(review_level, instructions["minimal"])
     
     def _parse_ai_response(self, response: str, filename: str) -> List[Dict[str, Any]]:
         """Parse AI response into structured comments"""
